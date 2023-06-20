@@ -3,19 +3,22 @@ import { Server, Socket } from "socket.io";
 import { Table } from "../models/Table";
 import { User } from "../types/User";
 import authController from "../controllers/auth.controller";
+import { Room } from "../models/Room";
 // import { userService } from "./userService";
 // import { logger } from "../helpers";
 
 export default class PokerService {
   private io!: Server;
   public tables: { [key: string]: Table } = {};
+  public rooms: { [key: string]: Room } = {};
   public users: Record<string, User> = {};
   public tableCounter: number = 0;
+  public roomCounter: number = 0;
 
   constructor(io: Server) {
     this.io = io;
     this.buildConnection();
-
+    this.createRoom({ type: "NL Texas Hold'em", smallBlind: 1, bigBlind: 2 });
     // this.makeSomeTables();
     // logger.info("Poker game service started");
   }
@@ -25,7 +28,7 @@ export default class PokerService {
       this.sendMessage(socket, "ping");
 
       socket.on("joinGame", (data) => this.newConnection(socket));
-      socket.on("createTable", (data) => this.createTable(socket, data));
+      // socket.on("createTable", (data) => this.createTable(socket, data));
       socket.on("tableInfo", (data) => this.tableInfo(socket, data));
       socket.on("takeSeat", (data) => this.takeSeat(socket, data));
 
@@ -45,19 +48,40 @@ export default class PokerService {
     this.sendMessage(socket, "lobbyInfo", this.lobbyInfo());
   };
 
-  createTable = async (socket: Socket, data: any) => {
-    console.log("request to create");
-    const { address, name, type, smallBlind, bigBlind, buyIn } = data;
-    if (!address || !name || !type || !smallBlind || !bigBlind || !buyIn) {
-      this.sendMessage(socket, "error", "Invalid data");
-      return;
+  createRoom = async (data: any) => {
+    const { type, smallBlind, bigBlind } = data;
+    this.rooms[this.roomCounter] = new Room(
+      Number(this.roomCounter),
+      smallBlind,
+      bigBlind,
+      "Cash Game"
+    );
+    for (var i = 0; i < 4; i++) {
+      this.createTable({
+        name: "aaa",
+        type,
+        smallBlind,
+        bigBlind,
+        roomid: this.roomCounter,
+      });
     }
-    const user = await authController.getUser(address);
+    this.roomCounter++;
+  };
 
-    if ((user && user.balance.ebone < buyIn) || buyIn < bigBlind * 10) {
-      this.sendMessage(socket, "error", "Not enough chips to create the table");
-      return;
-    }
+  createTable = async (data: any) => {
+    console.log("request to create");
+    const { address, name, type, smallBlind, bigBlind, buyIn, roomid } = data;
+    // if (!address || !name || !type || !smallBlind || !bigBlind || !buyIn) {
+    //   this.sendMessage(socket, "error", "Invalid data");
+    //   return;
+    // }
+
+    // const user = await authController.getUser(address);
+
+    // if ((user && user.balance.ebone < buyIn) || buyIn < bigBlind * 10) {
+    //   this.sendMessage(socket, "error", "Not enough chips to create the table");
+    //   return;
+    // }
 
     // logger.info("creating from ", data);
     // logger.info("table created ID:", this.tableCounter);
@@ -67,26 +91,24 @@ export default class PokerService {
       name,
       type,
       smallBlind,
-      bigBlind
+      bigBlind,
+      roomid
     );
 
-    await this.takeSeat(socket, {
-      address,
-      tableId: this.tableCounter,
-      position: 0,
-      buyIn,
-    });
+    this.rooms[roomid].tables.push(this.tableCounter);
+    // await this.takeSeat(socket, {
+    //   address,
+    //   tableId: this.tableCounter,
+    //   position: 0,
+    //   buyIn,
+    // });
     this.tableCounter++;
     this.broadcastMessage("lobbyInfo", this.lobbyInfo());
   };
 
   tableInfo = async (socket: Socket, data: any) => {
     const { address, tableId } = data;
-    if (
-      !address ||
-      typeof tableId == undefined ||
-      tableId >= this.tables.length
-    ) {
+    if (!address || typeof tableId == undefined) {
       this.sendMessage(socket, "error", "Invalid data");
       return;
     }
@@ -164,7 +186,7 @@ export default class PokerService {
   };
 
   lobbyInfo = () => {
-    let data = Object.values(this.tables).map((table) => table.infoForLobby());
+    let data = Object.values(this.rooms).map((room) => room.infoForLobby());
     return data;
   };
 
@@ -202,20 +224,11 @@ export default class PokerService {
   };
 
   disconnect = (socket: Socket) => {
-    let shouldUpdate: boolean = false;
     Object.keys(this.tables).forEach((key) => {
       let table = this.tables[key];
       let pos = table.getPlayerPosition(socket);
       if (pos >= 0) table.leaveSeat(pos);
-      if (!table.numberOfPlayers()) {
-        // only one player
-        delete this.tables[key];
-        shouldUpdate = true;
-      }
     });
-    if (shouldUpdate) {
-      console.log("~~ huhu ~~ I clean the dashboard :)");
-      this.broadcastMessage("lobbyInfo", this.lobbyInfo());
-    }
+    this.broadcastMessage("lobbyInfo", this.lobbyInfo());
   };
 }

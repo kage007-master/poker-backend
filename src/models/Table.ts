@@ -28,6 +28,7 @@ export class Table {
   server!: Server;
 
   id!: number;
+  roomid!: number;
   name!: string;
   type!: "NL Texas Hold'em" | "Pot Limit Omaha";
   smallBlind!: number;
@@ -58,10 +59,12 @@ export class Table {
     name: string,
     type: "NL Texas Hold'em" | "Pot Limit Omaha",
     smallBlind: number,
-    bigBlind: number
+    bigBlind: number,
+    roomid: number
   ) {
     this.server = server;
     this.id = id;
+    this.roomid = roomid;
     this.name = name;
     this.type = type;
     this.smallBlind = smallBlind;
